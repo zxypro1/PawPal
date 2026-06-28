@@ -75,10 +75,12 @@ export function useSnapshot(): AppSnapshot {
   return snapshot;
 }
 
-export function useNow(refreshMs = 30_000): number {
+export function useNow(refreshMs: number | null = 30_000): number {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
+    if (refreshMs === null) return;
+    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), refreshMs);
     return () => window.clearInterval(timer);
   }, [refreshMs]);

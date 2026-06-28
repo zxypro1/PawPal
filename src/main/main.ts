@@ -40,6 +40,7 @@ import {
   BREAK_RUN_TICK_MS,
   DISTRACTION_CHECK_INTERVAL_MS,
   DISTRACTION_WARNING_COOLDOWN_MS,
+  DRAG_TICK_MS,
   IS_DEV,
   PET_WINDOW,
   PRELOAD_PATH,
@@ -88,6 +89,11 @@ type PetPosition = {
   y: number;
 };
 
+const BREAK_RUN_MIN_SPEED_PX_PER_SECOND = 220;
+const BREAK_RUN_MAX_SPEED_PX_PER_SECOND = 400;
+const BREAK_RUN_MAX_ELAPSED_MS = 120;
+
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.setName(APP_NAME);
 
 const store = new Store<StoreSchema>({
@@ -125,6 +131,7 @@ let dragSafetyTimer: NodeJS.Timeout | null = null;
 let breakRunVelocity: PetPosition = { x: 0, y: 0 };
 let breakRunFormatter: ((seconds: number) => string) | null = null;
 let nextBreakRunTurnAt = 0;
+let breakRunLastMovedAt = 0;
 let breakMutedToday = false;
 let dragOffset: PetPosition = { x: 0, y: 0 };
 let petMouseInteractive = true;
@@ -398,7 +405,8 @@ function createPetWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      webSecurity: !IS_DEV
+      webSecurity: !IS_DEV,
+      autoplayPolicy: "no-user-gesture-required"
     }
   });
 
@@ -578,7 +586,7 @@ function startPetDrag(offset: { offsetX: number; offsetY: number }): void {
   if (dragTimer) clearInterval(dragTimer);
   if (dragSafetyTimer) clearTimeout(dragSafetyTimer);
   movePetWithCursor();
-  dragTimer = setInterval(movePetWithCursor, 16);
+  dragTimer = setInterval(movePetWithCursor, DRAG_TICK_MS);
   dragSafetyTimer = setTimeout(stopPetDrag, 15_000);
 }
 
@@ -611,6 +619,7 @@ function clearBreakRunTimers(): void {
     clearInterval(breakRunMovementTimer);
     breakRunMovementTimer = null;
   }
+  breakRunLastMovedAt = 0;
 }
 
 function showBreakRunCountdown(endsAt: number): void {
@@ -625,7 +634,9 @@ function showBreakRunCountdown(endsAt: number): void {
 }
 
 function chooseBreakRunVelocity(): PetPosition {
-  const speed = 3.5 + Math.random() * 2.9;
+  const speed =
+    BREAK_RUN_MIN_SPEED_PX_PER_SECOND +
+    Math.random() * (BREAK_RUN_MAX_SPEED_PX_PER_SECOND - BREAK_RUN_MIN_SPEED_PX_PER_SECOND);
   const angle = Math.random() * Math.PI * 2;
   return {
     x: Math.cos(angle) * speed,
@@ -642,6 +653,11 @@ function movePetForBreakRun(): void {
     y: bounds.y + Math.round(bounds.height / 2)
   }).workArea;
   const now = Date.now();
+  const elapsedMs = breakRunLastMovedAt
+    ? Math.min(Math.max(now - breakRunLastMovedAt, 1), BREAK_RUN_MAX_ELAPSED_MS)
+    : BREAK_RUN_TICK_MS;
+  breakRunLastMovedAt = now;
+  const elapsedSeconds = elapsedMs / 1000;
   const minX = workArea.x + 8;
   const maxX = workArea.x + workArea.width - PET_WINDOW.width - 8;
   const minY = workArea.y + 8;
@@ -651,8 +667,8 @@ function movePetForBreakRun(): void {
     breakRunVelocity = chooseBreakRunVelocity();
   }
 
-  let nextX = bounds.x + breakRunVelocity.x;
-  let nextY = bounds.y + breakRunVelocity.y;
+  let nextX = bounds.x + breakRunVelocity.x * elapsedSeconds;
+  let nextY = bounds.y + breakRunVelocity.y * elapsedSeconds;
 
   if (nextX <= minX) {
     nextX = minX;
@@ -709,6 +725,7 @@ function startBreakRun(): void {
   breakRunFormatter = pick(text().bubble.breakRun);
   breakRunVelocity = chooseBreakRunVelocity();
   nextBreakRunTurnAt = Date.now();
+  breakRunLastMovedAt = Date.now();
   setPetState("breakRunning");
   setPetFacing(breakRunVelocity.x >= 0 ? "right" : "left");
   const durationMs = getSettings().breakRunDurationSeconds * 1000;
@@ -1054,13 +1071,11 @@ function stopFocusMode(completed: boolean): void {
   setPetState("focusDone");
   showBubble({
     id: "focus-complete",
-    message: completed ? pick(text().bubble.focusComplete) : pick(text().bubble.focusCancelled),
-    autoDismissMs: 2800
+    message: completed ? pick(text().bubble.focusComplete) : pick(text().bubble.focusCancelled)
   });
   setTimeout(() => {
     if (!focusActive && !blockingMode) {
       if (showOverdueReminder()) return;
-      hideBubble();
       setPetState("idle");
     }
   }, 2900);
@@ -1178,7 +1193,16 @@ function registerIpc(): void {
 }
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: "pawpal-asset", privileges: { bypassCSP: true, supportFetchAPI: true } }
+  {
+    scheme: "pawpal-asset",
+    privileges: {
+      standard: true,
+      secure: true,
+      bypassCSP: true,
+      supportFetchAPI: true,
+      stream: true
+    }
+  }
 ]);
 
 app.whenReady().then(() => {

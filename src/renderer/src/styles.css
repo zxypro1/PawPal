@@ -50,6 +50,7 @@ textarea {
   padding: 0;
   pointer-events: auto;
   position: relative;
+  will-change: transform;
   width: 184px;
 }
 
@@ -59,6 +60,7 @@ textarea {
   pointer-events: none;
   transform: scaleX(1);
   user-select: none;
+  will-change: transform;
   width: 184px;
 }
 

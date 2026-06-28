@@ -319,7 +319,9 @@ export function SettingsView(): JSX.Element {
   const now = useNow();
   const savedSettingsKey = JSON.stringify(settings);
   const language = resolveLanguage(draft.language);
-  const labels = i18n(language).settings;
+  const copy = i18n(language);
+  const labels = copy.settings;
+  const menuLabels = copy.menu;
   const customPetReady = hasRequiredCustomPetAssets(draft.customPetAppearance);
 
   const petAvatar = useMemo(
@@ -631,9 +633,9 @@ export function SettingsView(): JSX.Element {
         <section className="prefs__group">
           <h2 className="prefs__group-title">{labels.testTools}</h2>
           <div className="test-tools">
-            <DemoChip trigger="break" label={labels.demoBreak} />
-            <DemoChip trigger="hydration" label={labels.demoWater} />
-            <DemoChip trigger="focusWarning" label={labels.demoFocusWarning} />
+            <DemoChip trigger="break" label={menuLabels.demoBreakReminder} />
+            <DemoChip trigger="hydration" label={menuLabels.demoHydrationReminder} />
+            <DemoChip trigger="focusWarning" label={menuLabels.demoFocusWarning} />
             <DemoChip trigger="happy" label={labels.demoHappy} />
             <button type="button" className="pref-chip-button" onClick={window.pawpal.resetToday}>
               {labels.resetToday}
