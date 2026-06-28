@@ -21,12 +21,19 @@ import {
 } from "../shared/constants";
 import { i18n, pick } from "../shared/i18n";
 import { PET_STATE_ORDER } from "../shared/petAppearances";
+import {
+  AUDIO_EVENTS,
+  AUDIO_FILE_EXTENSIONS,
+  hasAllowedAudioExtension
+} from "../shared/audioEvents";
 import type {
   AppSnapshot,
+  AudioEvent,
   BlockingMode,
   CustomPetAsset,
   DistractionStatus,
   DemoTrigger,
+  EventSound,
   PetFacing,
   PetState,
   Settings,
@@ -233,6 +240,51 @@ async function selectCustomPetAsset(state: PetState): Promise<CustomPetAsset | n
 
   if (result.canceled || !result.filePaths[0]) return null;
   return importCustomPetAsset(state, result.filePaths[0]);
+}
+
+function isAudioEvent(value: unknown): value is AudioEvent {
+  return typeof value === "string" && (AUDIO_EVENTS as readonly string[]).includes(value);
+}
+
+async function importCustomAudioAsset(
+  event: AudioEvent,
+  sourcePath: string
+): Promise<EventSound | null> {
+  if (!isAudioEvent(event) || typeof sourcePath !== "string") return null;
+  if (!hasAllowedAudioExtension(sourcePath)) return null;
+
+  const customRoot = join(app.getPath("userData"), "custom_sounds");
+  const eventDir = join(customRoot, event);
+  await mkdir(eventDir, { recursive: true });
+
+  const originalName = basename(sourcePath);
+  const safeName = originalName.replace(/[^a-zA-Z0-9._-]+/g, "-") || `${event}.mp3`;
+  const fileName = `${event}-${Date.now()}-${safeName}`;
+  const targetPath = join(eventDir, fileName);
+  await copyFile(sourcePath, targetPath);
+
+  return {
+    source: "custom",
+    relativePath: `custom_sounds/${event}/${fileName}`,
+    originalName,
+    updatedAt: Date.now()
+  };
+}
+
+async function selectCustomAudioAsset(event: AudioEvent): Promise<EventSound | null> {
+  if (!isAudioEvent(event)) return null;
+
+  const options: Electron.OpenDialogOptions = {
+    properties: ["openFile"],
+    filters: [{ name: "Audio", extensions: [...AUDIO_FILE_EXTENSIONS] }]
+  };
+  const result =
+    settingsWindow && !settingsWindow.isDestroyed()
+      ? await dialog.showOpenDialog(settingsWindow, options)
+      : await dialog.showOpenDialog(options);
+
+  if (result.canceled || !result.filePaths[0]) return null;
+  return importCustomAudioAsset(event, result.filePaths[0]);
 }
 
 function snapshot(): AppSnapshot {
@@ -1069,9 +1121,11 @@ function stopFocusMode(completed: boolean): void {
   }));
   sendToAll("app:snapshot", snapshot());
   setPetState("focusDone");
+  const focusCompleteSound = getSettings().audioSounds["focus-complete"];
   showBubble({
     id: "focus-complete",
-    message: completed ? pick(text().bubble.focusComplete) : pick(text().bubble.focusCancelled)
+    message: completed ? pick(text().bubble.focusComplete) : pick(text().bubble.focusCancelled),
+    ...(focusCompleteSound ? {} : { autoDismissMs: 2900 })
   });
   setTimeout(() => {
     if (!focusActive && !blockingMode) {
@@ -1169,6 +1223,12 @@ function registerIpc(): void {
   ipcMain.handle("custom-pet:import-asset", (_event, state: PetState, sourcePath: string) =>
     importCustomPetAsset(state, sourcePath)
   );
+  ipcMain.handle("custom-audio:select-asset", (_event, event: AudioEvent) =>
+    selectCustomAudioAsset(event)
+  );
+  ipcMain.handle("custom-audio:import-asset", (_event, event: AudioEvent, sourcePath: string) =>
+    importCustomAudioAsset(event, sourcePath)
+  );
   ipcMain.on("app:open-release-notes", openReleaseNotes);
   ipcMain.on("pet:clicked", () => {
     if (blockingMode) return;
@@ -1218,15 +1278,19 @@ app.whenReady().then(() => {
     const appBase = app.isPackaged ? process.resourcesPath : process.cwd();
     const builtInAssetRoot = resolve(appBase, "pet_assets");
     const customAssetRoot = resolve(app.getPath("userData"), "custom_pet_assets");
-    const assetPath = relativePath.startsWith("custom_pet_assets/")
-      ? resolve(app.getPath("userData"), relativePath)
-      : resolve(appBase, relativePath);
+    const customAudioRoot = resolve(app.getPath("userData"), "custom_sounds");
+    const assetPath =
+      relativePath.startsWith("custom_pet_assets/") || relativePath.startsWith("custom_sounds/")
+        ? resolve(app.getPath("userData"), relativePath)
+        : resolve(appBase, relativePath);
     const isInsideBuiltInAssetRoot =
       assetPath === builtInAssetRoot || assetPath.startsWith(`${builtInAssetRoot}${sep}`);
     const isInsideCustomAssetRoot =
       assetPath === customAssetRoot || assetPath.startsWith(`${customAssetRoot}${sep}`);
+    const isInsideCustomAudioRoot =
+      assetPath === customAudioRoot || assetPath.startsWith(`${customAudioRoot}${sep}`);
 
-    if (!isInsideBuiltInAssetRoot && !isInsideCustomAssetRoot) {
+    if (!isInsideBuiltInAssetRoot && !isInsideCustomAssetRoot && !isInsideCustomAudioRoot) {
       return new Response("Asset not found", { status: 404 });
     }
 

@@ -947,6 +947,73 @@ textarea {
   min-width: 92px;
 }
 
+.prefs__group-hint {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 6px 0 2px;
+}
+
+.audio-list {
+  display: grid;
+  gap: 8px;
+}
+
+.audio-slot {
+  align-items: center;
+  background: rgba(60, 47, 28, 0.035);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, 0.6fr) minmax(0, 1fr);
+  padding: 10px;
+}
+
+.audio-slot__meta {
+  display: grid;
+  gap: 3px;
+}
+
+.audio-slot__event {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.audio-slot__desc {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.audio-slot__body {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.audio-slot__status {
+  color: var(--ink-soft);
+  flex: 1 1 120px;
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 220px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-slot__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .test-tools {
   display: flex;
   flex-wrap: wrap;
@@ -1199,6 +1266,19 @@ textarea {
 
   .custom-pet-slot__actions {
     justify-content: flex-start;
+  }
+
+  .audio-slot {
+    grid-template-columns: 1fr;
+  }
+
+  .audio-slot__body {
+    justify-content: flex-start;
+  }
+
+  .audio-slot__status {
+    flex: 1 1 100%;
+    max-width: none;
   }
 }
 

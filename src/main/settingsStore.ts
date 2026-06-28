@@ -1,3 +1,4 @@
+import { normalizeAudioSounds } from "../shared/audioEvents";
 import { DEFAULT_SETTINGS } from "../shared/constants";
 import { resolveLanguage } from "../shared/i18n";
 import {
@@ -33,7 +34,8 @@ export function normalizeSettings(stored: Partial<Settings> = {}): Settings {
       stored.breakRunDurationSeconds,
       DEFAULT_SETTINGS.breakRunDurationSeconds,
       10
-    )
+    ),
+    audioSounds: normalizeAudioSounds(stored.audioSounds)
   };
 }
 

@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, JSX, ReactNode } from "react";
 import { i18n, LANGUAGE_OPTIONS, resolveLanguage } from "../../../shared/i18n";
+import {
+  AUDIO_EVENTS,
+  BUILTIN_AUDIO_PRESETS,
+  hasAllowedAudioExtension
+} from "../../../shared/audioEvents";
 import {
   hasRequiredCustomPetAssets,
   PET_STATE_ORDER,
@@ -10,10 +15,12 @@ import {
   resolvePetAppearanceId
 } from "../../../shared/petAppearances";
 import type {
+  AudioEvent,
   BuiltInPetAppearanceId,
   CustomPetAppearance,
   CustomPetAsset,
   DemoTrigger,
+  EventSound,
   PetState,
   Settings,
   UpdateCheckResult
@@ -316,6 +323,8 @@ export function SettingsView(): JSX.Element {
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [customEditorOpen, setCustomEditorOpen] = useState(settings.petAppearanceId === "custom");
+  const [previewingAudioEvent, setPreviewingAudioEvent] = useState<AudioEvent | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const now = useNow();
   const savedSettingsKey = JSON.stringify(settings);
   const language = resolveLanguage(draft.language);
@@ -401,6 +410,79 @@ export function SettingsView(): JSX.Element {
           : draft.petAppearanceId
     });
   }
+
+  function applyAudioSound(event: AudioEvent, sound: EventSound): void {
+    updateDraft({ audioSounds: { ...draft.audioSounds, [event]: sound } });
+  }
+
+  async function uploadAudioAsset(event: AudioEvent): Promise<void> {
+    const sound = await window.pawpal.selectCustomAudioAsset(event);
+    if (!sound) return;
+    applyAudioSound(event, sound);
+  }
+
+  async function uploadDroppedAudioAsset(event: AudioEvent, file: File): Promise<void> {
+    if (!hasAllowedAudioExtension(file.name)) return;
+    const sourcePath = window.pawpal.pathForFile(file);
+    if (!sourcePath) return;
+    const sound = await window.pawpal.importCustomAudioAsset(event, sourcePath);
+    if (!sound) return;
+    applyAudioSound(event, sound);
+  }
+
+  function useBuiltinAudio(event: AudioEvent): void {
+    const preset = BUILTIN_AUDIO_PRESETS[0];
+    if (!preset) return;
+    const originalName = preset.relativePath.split("/").pop() ?? preset.relativePath;
+    applyAudioSound(event, {
+      source: "builtin",
+      relativePath: preset.relativePath,
+      originalName,
+      updatedAt: Date.now()
+    });
+  }
+
+  function removeAudioSound(event: AudioEvent): void {
+    const next = { ...draft.audioSounds };
+    delete next[event];
+    updateDraft({ audioSounds: next });
+    if (previewingAudioEvent === event) stopAudioPreview();
+  }
+
+  function stopAudioPreview(): void {
+    const audio = previewAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      previewAudioRef.current = null;
+    }
+    setPreviewingAudioEvent(null);
+  }
+
+  function toggleAudioPreview(event: AudioEvent): void {
+    if (previewingAudioEvent === event) {
+      stopAudioPreview();
+      return;
+    }
+    const sound = draft.audioSounds[event];
+    if (!sound) return;
+    stopAudioPreview();
+    const audio = new Audio(window.pawpal.assetUrl(sound.relativePath));
+    previewAudioRef.current = audio;
+    setPreviewingAudioEvent(event);
+    audio.addEventListener("ended", stopAudioPreview);
+    audio.addEventListener("error", stopAudioPreview);
+    void audio.play().catch(stopAudioPreview);
+  }
+
+  useEffect(() => {
+    return () => {
+      const audio = previewAudioRef.current;
+      if (audio) {
+        audio.pause();
+      }
+    };
+  }, []);
 
   return (
     <main className="prefs">
@@ -548,6 +630,21 @@ export function SettingsView(): JSX.Element {
               onChange={(hydrationIntervalMinutes) => updateDraft({ hydrationIntervalMinutes })}
             />
           }
+        />
+      </section>
+
+      <section className="prefs__group">
+        <h2 className="prefs__group-title">{labels.sounds}</h2>
+        <p className="prefs__group-hint">{labels.soundsHelp}</p>
+        <AudioEventList
+          draft={draft}
+          labels={labels}
+          previewingEvent={previewingAudioEvent}
+          onUseBuiltin={useBuiltinAudio}
+          onUpload={(event) => void uploadAudioAsset(event)}
+          onDrop={uploadDroppedAudioAsset}
+          onRemove={removeAudioSound}
+          onTogglePreview={toggleAudioPreview}
         />
       </section>
 
@@ -961,6 +1058,105 @@ function DemoChip({ trigger, label }: { trigger: DemoTrigger; label: string }): 
     >
       {label}
     </button>
+  );
+}
+
+function AudioEventList({
+  draft,
+  labels,
+  previewingEvent,
+  onUseBuiltin,
+  onUpload,
+  onDrop,
+  onRemove,
+  onTogglePreview
+}: {
+  draft: Settings;
+  labels: SettingsCopy;
+  previewingEvent: AudioEvent | null;
+  onUseBuiltin: (event: AudioEvent) => void;
+  onUpload: (event: AudioEvent) => void;
+  onDrop: (event: AudioEvent, file: File) => void;
+  onRemove: (event: AudioEvent) => void;
+  onTogglePreview: (event: AudioEvent) => void;
+}): JSX.Element {
+  function allowDrop(event: DragEvent<HTMLDivElement>): void {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>, audioEvent: AudioEvent): void {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (!file) return;
+    onDrop(audioEvent, file);
+  }
+
+  return (
+    <div className="audio-list">
+      {AUDIO_EVENTS.map((audioEvent) => {
+        const sound = draft.audioSounds[audioEvent] ?? null;
+        const meta = labels.soundEvents[audioEvent];
+        const statusText = !sound
+          ? labels.noSound
+          : sound.source === "builtin"
+            ? labels.audioPresetReminder
+            : sound.originalName;
+        const isPreviewing = previewingEvent === audioEvent;
+        return (
+          <div
+            className="audio-slot"
+            key={audioEvent}
+            onDragOver={allowDrop}
+            onDrop={(event) => handleDrop(event, audioEvent)}
+          >
+            <div className="audio-slot__meta">
+              <span className="audio-slot__event">{meta.label}</span>
+              <span className="audio-slot__desc">{meta.description}</span>
+            </div>
+            <div className="audio-slot__body">
+              <span className="audio-slot__status" title={statusText}>
+                {statusText}
+              </span>
+              <div className="audio-slot__actions">
+                {BUILTIN_AUDIO_PRESETS.length > 0 ? (
+                  <button
+                    type="button"
+                    className="pref-button"
+                    onClick={() => onUseBuiltin(audioEvent)}
+                  >
+                    {labels.useBuiltinSound}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="pref-button"
+                  onClick={() => onUpload(audioEvent)}
+                >
+                  {sound ? labels.replaceSound : labels.uploadSound}
+                </button>
+                <button
+                  type="button"
+                  className="pref-button"
+                  disabled={!sound}
+                  onClick={() => onRemove(audioEvent)}
+                >
+                  {labels.removeSound}
+                </button>
+                <button
+                  type="button"
+                  className="pref-button"
+                  disabled={!sound}
+                  onClick={() => onTogglePreview(audioEvent)}
+                >
+                  {isPreviewing ? labels.stopPreview : labels.previewSound}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

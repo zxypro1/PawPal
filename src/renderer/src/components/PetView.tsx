@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX, PointerEvent } from "react";
 import { i18n, resolveLanguage } from "../../../shared/i18n";
-import type { PetState, SpeechBubble } from "../../../shared/types";
+import type { AudioEvent, EventSound, PetState, SpeechBubble } from "../../../shared/types";
 import { getPetAsset, getPetAssetVariantCount } from "../assets";
 import { useNow, useSnapshot } from "../hooks";
 import { pointInElementHitbox } from "../petHitbox";
@@ -14,14 +14,11 @@ type DragRef = {
 };
 
 const CONTINUOUS_ASSET_STATES = new Set<PetState>(["idle", "focusGuard"]);
-const AUDIO_REMINDER_BUBBLE_IDS = new Set(["break", "focus-complete"]);
-const REMINDER_AUDIO_PATH = "pet_assets/sounds/reminder.mp3";
+const FOCUS_COMPLETE_BUBBLE_ID = "focus-complete";
 const CONTINUOUS_ASSET_ROTATION_MS = 15 * 60 * 1000;
 const DRAG_START_DISTANCE_PX = 10;
 const PET_BUTTON_SELECTOR = ".pet-button";
 const BUBBLE_INTERACTIVE_SELECTOR = ".speech-bubble";
-const FOCUS_COMPLETE_BUBBLE_ID = "focus-complete";
-const BREAK_REMINDER_BUBBLE_ID = "break";
 
 function randomVariant(count: number, previous?: number): number {
   if (count <= 1) return 0;
@@ -55,21 +52,25 @@ export function PetView(): JSX.Element {
   const audioPlayingRef = useRef(false);
   const currentBubbleIdRef = useRef<string | null>(null);
   const reminderAudioRef = useRef<HTMLAudioElement | null>(null);
+  const settingsRef = useRef(snapshot.settings);
+  settingsRef.current = snapshot.settings;
   const language = resolveLanguage(snapshot.settings.language);
   const labels = i18n(language).settings;
   const stopReminderAudioLabel = language === "en" ? "Stop Music" : "\u505c\u6b62\u97f3\u4e50";
 
   function ensureReminderAudio(): HTMLAudioElement {
     if (!reminderAudioRef.current) {
-      reminderAudioRef.current = new Audio(window.pawpal.assetUrl(REMINDER_AUDIO_PATH));
-      reminderAudioRef.current.preload = "auto";
+      const audio = new Audio();
+      audio.preload = "auto";
+      reminderAudioRef.current = audio;
     }
 
     return reminderAudioRef.current;
   }
 
-  function playReminderAudio(): void {
+  function playEventAudio(sound: EventSound): void {
     const audio = ensureReminderAudio();
+    audio.src = window.pawpal.assetUrl(sound.relativePath);
     setAudioPlaying(true);
     audio.currentTime = 0;
     void audio.play().catch(() => {
@@ -96,15 +97,14 @@ export function PetView(): JSX.Element {
     const offBubble = window.pawpal.onShowBubble((nextBubble) => {
       currentBubbleIdRef.current = nextBubble.id;
       setBubble(nextBubble);
-      if (AUDIO_REMINDER_BUBBLE_IDS.has(nextBubble.id)) {
-        playReminderAudio();
+      stopReminderAudio();
+      const sound = settingsRef.current.audioSounds[nextBubble.id as AudioEvent];
+      if (sound) {
+        playEventAudio(sound);
       }
     });
     const offHide = window.pawpal.onHideBubble(() => {
-      const currentBubbleId = currentBubbleIdRef.current;
-      if (audioPlayingRef.current && currentBubbleId === BREAK_REMINDER_BUBBLE_ID) {
-        stopReminderAudio();
-      }
+      stopReminderAudio();
       currentBubbleIdRef.current = null;
       setBubble(null);
     });
@@ -280,9 +280,7 @@ export function PetView(): JSX.Element {
   }
 
   function handleBubbleAction(actionId: string): void {
-    if (bubble?.id === BREAK_REMINDER_BUBBLE_ID) {
-      stopReminderAudio();
-    }
+    stopReminderAudio();
     window.pawpal.bubbleAction(actionId);
   }
 

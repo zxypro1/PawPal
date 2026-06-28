@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   AppSnapshot,
+  AudioEvent,
   CustomPetAsset,
   DemoTrigger,
+  EventSound,
   PetState,
   Settings,
   SpeechBubble,
@@ -26,6 +28,10 @@ const api = {
     ipcRenderer.invoke("custom-pet:select-asset", state),
   importCustomPetAsset: (state: PetState, sourcePath: string): Promise<CustomPetAsset | null> =>
     ipcRenderer.invoke("custom-pet:import-asset", state, sourcePath),
+  selectCustomAudioAsset: (event: AudioEvent): Promise<EventSound | null> =>
+    ipcRenderer.invoke("custom-audio:select-asset", event),
+  importCustomAudioAsset: (event: AudioEvent, sourcePath: string): Promise<EventSound | null> =>
+    ipcRenderer.invoke("custom-audio:import-asset", event, sourcePath),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   petClicked: (): void => ipcRenderer.send("pet:clicked"),
   petContextMenu: (): void => ipcRenderer.send("pet:context-menu"),

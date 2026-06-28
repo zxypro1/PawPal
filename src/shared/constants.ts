@@ -51,7 +51,8 @@ export const DEFAULT_SETTINGS: Settings = {
     "哔哩哔哩",
     "虎扑",
     "贴吧"
-  ]
+  ],
+  audioSounds: {}
 };
 
 export function todayKey(date = new Date()): string {

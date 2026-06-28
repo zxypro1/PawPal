@@ -28,6 +28,15 @@ export type CustomPetAsset = {
   updatedAt: number;
 };
 
+export type AudioEvent = "break" | "hydration" | "focus-warning" | "focus-complete";
+
+export type EventSound = {
+  source: "builtin" | "custom";
+  relativePath: string;
+  originalName: string;
+  updatedAt: number;
+};
+
 export type CustomPetAppearance = {
   name: string;
   assets: Partial<Record<PetState, CustomPetAsset>>;
@@ -65,6 +74,7 @@ export type Settings = {
   distractionGraceSeconds: number;
   distractionBlockedApps: string[];
   distractionBlockedKeywords: string[];
+  audioSounds: Partial<Record<AudioEvent, EventSound>>;
 };
 
 export type TodayStats = {
